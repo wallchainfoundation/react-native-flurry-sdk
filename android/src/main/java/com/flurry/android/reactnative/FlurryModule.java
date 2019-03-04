@@ -17,8 +17,10 @@
 package com.flurry.android.reactnative;
 
 import android.content.Context;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import android.util.Log;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Callback;
@@ -36,7 +38,6 @@ import com.flurry.android.FlurryAgentListener;
 
 import java.util.HashMap;
 import java.util.Map;
-import android.util.Log;
 
 public class FlurryModule extends ReactContextBaseJavaModule {
 
