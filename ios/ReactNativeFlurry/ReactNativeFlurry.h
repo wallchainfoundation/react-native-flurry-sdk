@@ -14,13 +14,33 @@
  * limitations under the License.
  */
 
-#if __has_include("RCTBridgeModule.h")
-#import "RCTBridgeModule.h"
-#else
+#if __has_include(<React/RCTBridgeModule.h>)
 #import <React/RCTBridgeModule.h>
+#else
+#import "RCTBridgeModule.h"
 #endif
+
+@protocol RNFlurryEventDispatcherDelegate <NSObject>
+
+- (BOOL)canAcceptEvents;
+- (void)sendEvent:(NSString *)event params:(NSDictionary *)params;
+
+@end
 
 @interface ReactNativeFlurry : NSObject <RCTBridgeModule>
 
+#if TARGET_OS_IOS
+/*
+ *  Call this API if you want enable Push Notificaions for React Native Flurry SDK.
+ *  This must be called right after application:didFinishLaunchingWithOptions:
+ *
+ *  This method takes care of all the setup for Push Notifications.
+ *  1) Registers for Notifications
+ *  2) Handles device tokens
+ *  3) Listens for callbacks from UIApplication and UNUserNotificationCenter
+ *  4) Send notification events to React Native
+ */
++ (void)enableMessaging;
+#endif
+
 @end
-  

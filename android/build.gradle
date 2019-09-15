@@ -7,7 +7,7 @@ buildscript {
     }
 
     dependencies {
-        classpath "com.android.tools.build:gradle:3.1.4"
+        classpath "com.android.tools.build:gradle:3.2.1"
     }
 }
 
@@ -16,12 +16,12 @@ def safeExtGet(prop, fallback) {
 }
 
 android {
-    compileSdkVersion safeExtGet('compileSdkVersion', 27)
-    buildToolsVersion safeExtGet('buildToolsVersion', '27.0.3')
+    compileSdkVersion safeExtGet('compileSdkVersion', 28)
+    buildToolsVersion safeExtGet('buildToolsVersion', '28.0.3')
 
     defaultConfig {
         minSdkVersion safeExtGet('minSdkVersion', 16)
-        targetSdkVersion safeExtGet('targetSdkVersion', 27)
+        targetSdkVersion safeExtGet('targetSdkVersion', 28)
         versionCode 1
         versionName "1.0"
     }
@@ -29,6 +29,7 @@ android {
         abortOnError false
     }
 }
+
 
 repositories {
     mavenLocal()
@@ -43,6 +44,7 @@ repositories {
 
 dependencies {
     implementation 'com.facebook.react:react-native:+'
-    implementation 'com.flurry.android:analytics:11.5.0@aar'
+    implementation 'com.flurry.android:analytics:11.6.0@aar'
+    implementation 'com.flurry.android:marketing:11.6.0@aar'
 }
 

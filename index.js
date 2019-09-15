@@ -1,4 +1,6 @@
 import {
+    DeviceEventEmitter,
+    NativeAppEventEmitter,
     NativeModules,
     Platform,
  } from 'react-native';
@@ -19,6 +21,37 @@ function priorInit(wrapped) {
 }
 
 export default class Flurry {
+
+    /**
+     * Android (2:VERBOSE, 3:DEBUG, 4:INFO, 5:WARN, 6:ERROR, 7:ASSERT), iOS (2:All, 3-5:Debug, 6-7:Critical)
+     */
+    static LogLevel = Object.freeze({
+	    VERBOSE: 2,
+	    DEBUG:   3,
+	    INFO:    4,
+	    WARN:    5,
+	    ERROR:   6,
+	    ASSERT:  7
+    });
+
+    static Gender = Object.freeze({
+	    MALE:   'm',
+	    FEMALE: 'f'
+    });
+
+    static ConfigStatus = Object.freeze({
+        SUCCESS:   'FetchSuccess',
+        UNCHANGED: 'FetchNoChange',
+        ERROR:     'FetchError',
+        ACTIVATED: 'ActivateComplete'
+    });
+
+    static MessageType = Object.freeze({
+        RECEIVED:  'NotificationReceived',
+        CLICKED:   'NotificationClicked',
+        CANCELLED: 'NotificationCancelled',
+        REFRESH:   'TokenRefresh'
+    });
 
     static Builder = class {
         constructor() {
@@ -57,11 +90,6 @@ export default class Flurry {
             return this;
         }
 
-        withCrashReporting(crashReporting = true) {
-            ReactNativeFlurry.withCrashReporting(crashReporting);
-            return this;
-        }
-
         withContinueSessionMillis(sessionMillis = 10000) {
             if (sessionMillis < 5000) {
                 console.error('Flurry.Builder.withContinueSessionMillis: the minimum timeout for a session is 5,000 ms.');
@@ -80,13 +108,27 @@ export default class Flurry {
             return this;
         }
 
-        withLogLevel(logLevel = 5) {
+        withLogLevel(logLevel = Flurry.LogLevel.WARN) {
             ReactNativeFlurry.withLogLevel(logLevel);
             return this;
         }
 
-        withMessaging(autoIntegration = true) {
-            ReactNativeFlurry.withMessaging(autoIntegration);
+        withMessaging(enableMessaging = true) {
+            ReactNativeFlurry.withMessaging(enableMessaging);
+            return this;
+        }
+
+        withTVSessionReportingInterval(interval = 5) {
+            if (Platform.OS === 'ios' && Platform.isTVOS) {
+                ReactNativeFlurry.withTVSessionReportingInterval(interval);
+            }
+            return this;
+        }
+
+        withTVEventCountThreshold(threshold = 10) {
+            if (Platform.OS === 'ios' && Platform.isTVOS) {
+                ReactNativeFlurry.withTVEventCountThreshold(threshold);
+            }
             return this;
         }
     };
@@ -164,7 +206,7 @@ export default class Flurry {
     /**
      * @deprecated Please use Flurry.Builder instead.
      */
-    static withLogLevel(logLevel = 5) {
+    static withLogLevel(logLevel = Flurry.LogLevel.WARN) {
         priorInit(ReactNativeFlurry.withLogLevel)(logLevel);
     }
 
@@ -179,7 +221,7 @@ export default class Flurry {
 
     static setGender(gender) {
         if (typeof gender !== 'string' || !['m', 'f'].includes(gender)) {
-            console.error(`Flurry.setGender: gender must be one of ['m', 'f']. Got ${gender}`);
+            console.error(`Flurry.setGender: gender must be type of Flurry.Gender. Got ${gender}`);
             return;
         }
 
@@ -399,4 +441,99 @@ export default class Flurry {
         ReactNativeFlurry.onPageView();
     }
 
+    static addConfigListener(callback) {
+        if (typeof callback !== 'function') {
+            console.error(`Flurry.addConfigListener: callback must be a function. Got ${callback}`);
+            return;
+        }
+
+        var Emitter = (Platform.OS === 'android') ? DeviceEventEmitter : NativeAppEventEmitter;
+        Emitter.addListener('FlurryConfigEvent', callback);
+
+        ReactNativeFlurry.registerConfigListener();
+    }
+
+    static removeConfigListener(callback) {
+        if (typeof callback !== 'function') {
+            console.error(`Flurry.removeConfigListener: callback must be a function. Got ${callback}`);
+            return;
+        }
+
+        var Emitter = (Platform.OS === 'android') ? DeviceEventEmitter : NativeAppEventEmitter;
+        Emitter.removeListener('FlurryConfigEvent', callback);
+
+        ReactNativeFlurry.unregisterConfigListener();
+    }
+
+    static fetchConfig() {
+        ReactNativeFlurry.fetchConfig();
+    }
+
+    static activateConfig() {
+        ReactNativeFlurry.activateConfig();
+    }
+
+    static getConfigString(key, defaultValue) {
+        if (arguments.length === 1) {
+            return ReactNativeFlurry.getConfigStringMap(key);
+        } else if (arguments.length === 2) {
+            if (typeof key !== 'string') {
+                console.error(`Flurry.getConfigString: key must be a string. Got ${key}`);
+                return;
+            }
+
+            if (typeof defaultValue !== 'string') {
+                console.error(`Flurry.getConfigString: defaultValue must be a string. Got ${defaultValue}`);
+                return;
+            }
+
+            return ReactNativeFlurry.getConfigString(key, defaultValue);
+        }
+    }
+
+    static addMessagingListener(callback) {
+        if (typeof callback !== 'function') {
+            console.error(`Flurry.addMessagingListener: callback must be a function. Got ${callback}`);
+            return;
+        }
+
+        var Emitter = (Platform.OS === 'android') ? DeviceEventEmitter : NativeAppEventEmitter;
+        Emitter.addListener('FlurryMessagingEvent', callback);
+
+        ReactNativeFlurry.enableMessagingListener(true);
+    }
+
+    static removeMessagingListener(callback) {
+        if (typeof callback !== 'function') {
+            console.error(`Flurry.removeMessagingListener: callback must be a function. Got ${callback}`);
+            return;
+        }
+
+        var Emitter = (Platform.OS === 'android') ? DeviceEventEmitter : NativeAppEventEmitter;
+        Emitter.removeListener('FlurryMessagingEvent', callback);
+    }
+
+    static willHandleMessage(handled) {
+        ReactNativeFlurry.willHandleMessage(handled);
+    }
+
+    static printMessage(message) {
+        if (message.Type === Flurry.MessageType.REFRESH) {
+            console.log('Flurry Messaging Type: ' + message.Type +
+                    '\n    Token: ' + message.Token);
+            return;
+        }
+
+        var data = '';
+        for (var prop in message.Data) {
+            data += '\n\t' + prop + ': ' + message.Data[prop];
+        }
+        console.log('Flurry Messaging Type: ' + message.Type +
+            '\n    Title: ' + message.Title +
+            '\n    Body: ' + message.Body +
+            '\n    ClickAction: ' + message.ClickAction +
+            '\n    Data:' + data);
+    }
+
 }
+

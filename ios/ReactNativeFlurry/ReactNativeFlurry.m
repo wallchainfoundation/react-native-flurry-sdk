@@ -15,15 +15,44 @@
  */
 
 #import "ReactNativeFlurry.h"
-#import <Flurry.h>
+#import "Flurry/Flurry.h"
+
+#if TARGET_OS_IOS
+#ifdef HAS_MESSAGING
+#import "FlurryMessaging/FlurryMessaging.h"
+#import "ReactNativeFlurryMessagingListener.h"
+#endif
+#import "FlurryConfig/FConfig.h"
+#import "ReactNativeFlurryConfigListener.h"
+#endif
+
+#if __has_include(<React/RCTBridge.h>)
+#import <React/RCTBridge.h>
+#else
+#import "RCTBridge.h"
+#endif
+
+#if __has_include(<React/RCTEventDispatcher.h>)
+#import <React/RCTEventDispatcher.h>
+#else
+#import "RCTEventDispatcher.h"
+#endif
 
 static NSString * const originName = @"react-native-flurry-sdk";
-static NSString * const originVersion = @"2.1.0";
+static NSString * const originVersion = @"3.7.0";
 
-@interface ReactNativeFlurry ()
+@interface ReactNativeFlurry ()<RNFlurryEventDispatcherDelegate>
 
 @property (strong, nonatomic) FlurrySessionBuilder *sessionBuilder;
 @property (assign, nonatomic) FlurryLogLevel logLevel;
+@property (assign, nonatomic) BOOL isActive;
+
+#if TARGET_OS_IOS
+#ifdef HAS_MESSAGING
+@property (strong, nonatomic) ReactNativeFlurryMessagingListener *messagingListener;
+#endif
+@property (strong, nonatomic) ReactNativeFlurryConfigListener *configListener;
+#endif
 
 @end
 
@@ -31,13 +60,34 @@ static NSString * const originVersion = @"2.1.0";
 
 RCT_EXPORT_MODULE();
 
+@synthesize bridge = _bridge;
+
+static ReactNativeFlurry *gInstance;
+
++ (void)initialize {
+    if (self == ReactNativeFlurry.class) {
+        gInstance = [[ReactNativeFlurry alloc] init];
+    }
+}
+
 - (instancetype)init {
+    if (gInstance != nil) {
+        return gInstance;
+    }
+    
     self = [super init];
     if (self) {
-        _sessionBuilder = [FlurrySessionBuilder new];
         _logLevel = FlurryLogLevelCriticalOnly; // default log level
+        _sessionBuilder = [FlurrySessionBuilder new];
+        _isActive = NO;
         [Flurry addOrigin:originName withVersion:originVersion];
+        
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(reactNativeJavaScriptDidFinishLoad)
+                                                     name:RCTJavaScriptDidLoadNotification
+                                                   object:nil];
     }
+    
     return self;
 }
 
@@ -49,11 +99,23 @@ RCT_EXPORT_MODULE();
     return dispatch_get_main_queue();
 }
 
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+#pragma mark - Flurry Builder methods
+
 RCT_EXPORT_METHOD(initBuilder) {
+    if (self.sessionBuilder == nil) {
+        self.sessionBuilder = [FlurrySessionBuilder new];
+    }
 }
 
 RCT_EXPORT_METHOD(build:(nonnull NSString *)apiKey) {
-    [Flurry startSession:apiKey withSessionBuilder:self.sessionBuilder];
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        [Flurry startSession:apiKey withSessionBuilder:self.sessionBuilder];
+    });
 }
 
 RCT_EXPORT_METHOD(withCrashReporting:(BOOL)crashReporting) {
@@ -94,6 +156,28 @@ RCT_EXPORT_METHOD(withLogLevel:(NSInteger)value) {
     [self.sessionBuilder withLogLevel:self.logLevel];
 }
 
+RCT_EXPORT_METHOD(withMessaging:(BOOL)enableMessaging) {
+#if TARGET_OS_IOS
+    if (enableMessaging) {
+        [self.class enableMessaging];
+    }
+#endif
+}
+
+RCT_EXPORT_METHOD(withTVSessionReportingInterval:(NSInteger)value) {
+#if TARGET_OS_TV
+    [self.sessionBuilder withTVSessionReportingInterval:value];
+#endif
+}
+
+RCT_EXPORT_METHOD(withTVEventCountThreshold:(NSInteger)value) {
+#if TARGET_OS_TV
+    [self.sessionBuilder withTVEventCountThreshold:value];
+#endif
+}
+
+#pragma mark - React Native API methods
+
 RCT_EXPORT_METHOD(setAge:(int)age) {
     [Flurry setAge:age];
 }
@@ -115,7 +199,10 @@ RCT_EXPORT_METHOD(setUserId:(nullable NSString *)userId) {
 }
 
 RCT_EXPORT_METHOD(setVersionName:(nonnull NSString *)version) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     [Flurry setAppVersion:version];
+#pragma clang diagnostic pop
 }
 
 RCT_EXPORT_METHOD(setIAPReportingEnabled:(BOOL)enableIAP) {
@@ -143,10 +230,11 @@ RCT_EXPORT_METHOD(getVersions:(RCTResponseSenderBlock)errorCallback successCallb
 
 RCT_REMAP_METHOD(getVersionsPromise, getVersionsPromiseWithResolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
     @try {
-        NSString *agentVersion = [Flurry getFlurryAgentVersion];
+        // Please note that AgentVersion on iOS platform is equivalent to ReleaseVersion on Android platform.
+        NSString *releaseVersion = [Flurry getFlurryAgentVersion];
         NSString *sessionId = [Flurry getSessionID];
-        NSDictionary *map = @{@"agentVersion": agentVersion,
-                              @"releaseVersion": [NSNull null],
+        NSDictionary *map = @{@"agentVersion": [NSNull null],
+                              @"releaseVersion": releaseVersion,
                               @"sessionId": sessionId};
         resolve(map);
     } @catch (NSException *exception) {
@@ -187,7 +275,9 @@ RCT_EXPORT_METHOD(logPayment:(NSString *)productName productId:(NSString *)produ
 }
 
 RCT_EXPORT_METHOD(onPageView) {
+#if TARGET_OS_IOS
     [Flurry logPageView];
+#endif
 }
 
 RCT_EXPORT_METHOD(onError:(nonnull NSString *)errorId message:(nullable NSString *)message errorClass:(nullable NSString *)errorClass) {
@@ -204,6 +294,128 @@ RCT_EXPORT_METHOD(onErrorParams:(nonnull NSString *)errorId message:(nullable NS
         error = [NSError errorWithDomain:errorClass code:0 userInfo:nil];
     }
     [Flurry logError:errorId message:message error:error withParameters:parameters];
+}
+
+#pragma mark - Flurry Messaging
+
+RCT_EXPORT_METHOD(enableMessagingListener:(BOOL)enabled) {
+#if TARGET_OS_IOS
+#ifdef HAS_MESSAGING
+    [ReactNativeFlurryMessagingListener messagingListener].messagingListenerEnabled = enabled;
+#else
+    [self handleMessagingNotFound];
+#endif
+#endif
+}
+
+RCT_EXPORT_METHOD(willHandleMessage:(BOOL)handled) {
+    NSLog(@"Flurry.willHandleMessage is not supported on iOS and tvOS.");
+}
+
+#pragma mark - Flurry Config
+
+RCT_EXPORT_METHOD(registerConfigListener) {
+#if TARGET_OS_IOS
+    if (!self.configListener) {
+        self.configListener = [ReactNativeFlurryConfigListener configListener];
+        self.configListener.delegate = self;
+        [[FConfig sharedInstance] registerObserver:self.configListener withExecutionQueue:self.configListener.queue];
+    }
+    [self.configListener addCallback];
+#endif
+}
+
+RCT_EXPORT_METHOD(unregisterConfigListener) {
+#if TARGET_OS_IOS
+    [self.configListener removeCallback];
+#endif
+}
+
+RCT_EXPORT_METHOD(fetchConfig) {
+#if TARGET_OS_IOS
+    [[FConfig sharedInstance] fetchConfig];
+#endif
+}
+
+RCT_EXPORT_METHOD(activateConfig) {
+#if TARGET_OS_IOS
+    [[FConfig sharedInstance] activateConfig];
+#endif
+}
+
+RCT_REMAP_METHOD(getConfigString, getConfigString:(nonnull NSString *)key defaultValue:(nonnull NSString *)defaultValue resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+#if TARGET_OS_IOS
+    @try {
+        NSString *value = [[FConfig sharedInstance] getStringForKey:key withDefault:defaultValue];
+        NSDictionary *map = @{key: value};
+        resolve(map);
+    } @catch (NSException *exception) {
+        reject([exception description], [exception reason], nil);
+    }
+#endif
+}
+
+RCT_REMAP_METHOD(getConfigStringMap, getConfigStringMap:(nonnull NSDictionary *)defaultMap resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+#if TARGET_OS_IOS
+    @try {
+        NSMutableDictionary<NSString *, NSString *> *map = [NSMutableDictionary dictionary];
+        for (NSString *key in defaultMap) {
+            NSString *val = [[FConfig sharedInstance] getStringForKey:key withDefault:defaultMap[key]];
+            map[key] = val;
+        }
+        resolve(map);
+    } @catch (NSException *exception) {
+        reject([exception description], [exception reason], nil);
+    }
+#endif
+}
+
+#pragma mark - Flurry Event Dispatcher delegate
+
+- (void)sendEvent:(NSString *)event params:(NSDictionary *)params {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    [self.bridge.eventDispatcher sendAppEventWithName:event body:params];
+#pragma clang diagnostic pop
+}
+
+- (BOOL)canAcceptEvents {
+    return self.isActive;
+}
+
+#pragma mark - Notification listener
+
+- (void)reactNativeJavaScriptDidFinishLoad {
+    self.isActive = YES;
+#if TARGET_OS_IOS
+#ifdef HAS_MESSAGING
+    [[ReactNativeFlurryMessagingListener messagingListener] sendPendingEvents];
+#endif
+#endif
+}
+
+#pragma mark - Native API
+
+#if TARGET_OS_IOS
++ (void)enableMessaging {
+#ifdef HAS_MESSAGING
+    static dispatch_once_t messagingToken;
+    dispatch_once(&messagingToken, ^{
+        [FlurryMessaging setAutoIntegrationForMessaging];
+        gInstance.messagingListener = [ReactNativeFlurryMessagingListener messagingListener];
+        [FlurryMessaging setMessagingDelegate:gInstance.messagingListener];
+        gInstance.messagingListener.delegate = gInstance;
+    });
+#else
+    [gInstance handleMessagingNotFound];
+#endif
+}
+#endif
+
+#pragma mark - Private helpers
+
+- (void)handleMessagingNotFound {
+    NSLog(@"Flurry: You are using `libReactNativeFlurry.a` instead of `libReactNativeFlurryWithMessaging.a`. Please re-link react-native-flurry-sdk by executing\n\treact-native unlink react-native-flurry-sdk && react-native link react-native-flurry-sdk\nand type Y while being asked if you need to integrate Flurry Push.");
 }
 
 @end

@@ -1,5 +1,59 @@
 # Change Log
 
+## v3.7.0 (2019-07-01)
+
+#### Bug Fixes
+
+* For iOS, provide a separate target for Flurry Push to avoid Apple Push Notification service conflict
+
+## v3.6.0 (2019-05-28)
+
+#### Features
+
+* Support Analytics features on the tvOS platform
+
+# v3.5.0 (2019-05-06)
+
+#### Features
+
+* Support Flurry Config for remote config setup features
+
+## v3.2.0 (2019-04-08)
+
+#### Features
+
+* Provide Enum for MessageType
+* Improve and support more JSDoc for code completion
+* Support optional user's native `FlurryMarketingOptions` / `FlurryMessagingListener` for Android Push
+* Support iOS Cold start notification
+
+#### Bug Fixes
+
+* Fix undefined variable errors for default withLogLevel call
+
+## v3.1.0 (2019-03-25)
+
+#### Features
+
+* Provide Enum for LogLevel and Gender
+* Improve and support more JSDoc for code completion
+* Upgrade Flurry Android SDK version to 11.6.0
+
+#### Bug Fixes
+
+* Do not include Firebase libraries for Android platform
+
+# v3.0.0 (2019-03-11)
+
+#### Features
+
+* Support Flurry Push for messaging features
+
+#### Bug Fixes
+
+* Fix TypeScript index.d.ts warning
+* Match iOS versioning with Android
+
 ## v2.1.0 (2019-02-27)
 
 #### Features
